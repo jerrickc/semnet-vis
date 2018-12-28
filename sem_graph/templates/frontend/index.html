@@ -1,0 +1,314 @@
+{% load static %}
+{% load customtags %}
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<script src="{% static "sem_graph/d3.v5.min.js" %}"></script>
+		<script src="{% static "sem_graph/jquery-3.3.1.min.js" %}"></script>
+		<style>
+			svg text::selection {
+				background: none;
+			}
+		</style>
+	</head>
+	<body height = "100%" width = "100%" style = "overflow:hidden;background:#eee;margin:0;overflow:scroll" xmlns="http://www.w3.org/1999/xhtml">
+		<!--<canvas id="canvas" width="100%" height="100%">
+			<span class="error">Your browser does not support<br>the HTML5 &lt;canvas&gt; element</span>
+		</canvas>-->
+		<!--<svg id = "drawarea" width = "100%" height="100%">
+			
+		</svg>-->
+		<textarea contenteditable="true" style="overflow:scroll;padding:0px;border:0px;background:#ccc;width:30%;height:70%;left:70%;position:absolute;text-align:center;" id="datadisplay">
+		</textarea>
+		<form style="overflow:hidden;padding:0px;border:0px;background:#ccc;width:30%;height:30%;left:70%;top:70%;position:absolute;text-align:center;">
+			<select>
+				{% if edgetypes %}
+					{% for etype in edgetypes %}
+						<option>
+							{{etype.typeName}}
+						</option>
+					{% endfor %}
+				{% endif %}
+			</select>
+		</form>
+		<script>
+			var InfoNode = class {
+				constructor(id, info, data, x, y, nodearr, relationarr){
+					this.id = id;
+					this.info = info;
+					this.textdata = data;
+					this.x = x;
+					this.y = y;
+					this.edge_array = [];
+					this.edge_rev_array = [];
+					lastnodeid++;
+				}
+			};
+			var Relation = class {
+				constructor(id, type, startNode, endNode, nodearr, relationarr){
+					this.id = id;
+					this.type = type;
+					this.startNode = startNode;
+					this.endNode = endNode;
+					for(let iter = 0; iter < nodearr.length; iter++){
+						if(nodearr[iter].id == this.startNode){
+							nodearr[iter]["edge_array"].push(id);
+						}
+						if(nodearr[iter].id == this.endNode){
+							nodearr[iter]["edge_rev_array"].push(id);;
+						}
+					}
+					//nodearr[startNode]["edge_array"].push(id);
+					//nodearr[endNode]["edge_rev_array"].push(id);
+					lastrelid++;
+				}
+			}
+			
+			//data objects
+			var nodearr = [];
+			var relationarr = [];
+			var lastnodeid = nodearr.length, lastrelid = relationarr.length;
+			let nodearrtemp = "";
+			{% if nodes %}
+				{% for node in nodes %}
+					nodearrtemp = decodeHtml("{% jsonify node.data %}")
+					nodearr.push(new InfoNode({{ node.id }}, "{{ node.name }}", nodearrtemp.substring(1,nodearrtemp.length-1), {{ node.x }}, {{ node.y }}, nodearr, relationarr));
+				{% endfor %}
+			{% endif %}
+			{% if edges %}
+				{% for edge in edges %}
+					relationarr.push(new Relation({{ edge.id }}, "empty", {{ edge.node1.id }}, {{ edge.node2.id }}, nodearr, relationarr));
+				{% endfor %}
+			{% endif %}
+			var selectedData = {};
+			//var offsetX = 0, offsetY = 0;
+			
+			
+			//options for display
+			var circlesize = 30, fontsize=2;
+			var draggingNode = false;
+			var moved = false;
+			var heldNode = 0;
+			var drawingEdge = false;
+			var origin = 0;
+			
+			//helper functions here from stackoverflow
+			function decodeHtml(html) {
+				var txt = document.createElement("textarea");
+				txt.innerHTML = html;
+				return txt.value;
+			}
+			
+			/*DB API HOOKS UP TO THESE FUNCTIONS*/
+			function addNode(mousecoords){
+				$.post("{% url 'addNode' graphID %}",
+					{
+						"info": "title"+lastnodeid,
+						"textdata": "data"+lastnodeid,
+						"x": mousecoords[0],
+						"y": mousecoords[1]
+					},
+					function( data ) {
+						console.log("Added DB node: " + data);
+						nodearr.push(new InfoNode(data, "title"+lastnodeid, "data"+lastnodeid, mousecoords[0], mousecoords[1], nodearr, relationarr));
+						update();
+					}
+				);
+			}
+			function addEdge(node1,node2){
+				$.post("{% url 'addEdge' graphID %}",
+					{
+						"node1": node1,
+						"node2": node2
+					},
+					function( data ) {
+						console.log("Added DB edge: " + data);
+						relationarr.push(new Relation(data, "empty", node1, node2, nodearr, relationarr));
+						update();
+					}
+				);
+			}
+			function editNode(changedNode){
+				$.post("{% url 'editNode' %}",
+					{
+						"id": changedNode.id,
+						"info": changedNode.info,
+						"textdata": changedNode.textdata,
+						"x": changedNode.x,
+						"y": changedNode.y
+					},
+					function( data ) {
+						console.log("Edited DB node: " + data);
+					}
+				);
+			}
+			
+			
+			/*generate SVG elements for node representation
+			  nodesEnter is selection of node groups*/
+			function drawNodes(nodesEnter){
+				let temp = d3.select("#maingroup").selectAll(".nodeGraphic circle");
+				nodesEnter.append("circle").merge(temp)
+				.attr("cx", function(d,i){return d.x})
+				.attr("cy", function(d,i){return d.y})
+				.attr("r", circlesize)
+				.attr("fill", "#ccc")
+				.attr("stroke","#eee")
+				.attr("stroke-width","3");
+
+				temp = d3.select("#maingroup").selectAll(".nodeGraphic text");
+				//console.log("temp",temp, nodesEnter);
+				nodesEnter.append("text").merge(temp)
+				.attr("font-size", fontsize+"em")
+				.attr("text-anchor", "middle")
+				.attr("dominant-baseline", "middle")
+				.merge(temp)
+				.attr("y", function(d){return d.y})
+				.attr("x", function(d){return d.x})
+				.text(function(d){
+					//console.log(d.info);
+					return d.info;
+				});
+			}
+			
+			//generate SVG elements for edge representation
+			function drawEdges(edgesEnter){
+				let temp = d3.select("#maingroup").selectAll(".edgeGraphic path");
+				edgesEnter.append("path").merge(temp)
+				.attr("d", function(d,i){
+					let startNode = null, endNode = null;
+					for(let iter = 0; iter < nodearr.length; iter++){
+						if(nodearr[iter].id == d.startNode){
+							startNode = nodearr[iter];
+						}
+						if(nodearr[iter].id == d.endNode){
+							endNode = nodearr[iter];
+						}
+					}
+					let startStr = "M " + startNode.x + " " + startNode.y + "\n";
+					let dx = endNode.x - startNode.x;
+					let dy = endNode.y - startNode.y;
+					let arcStr = "A 6 2 " + (Math.atan(dy/dx)*(180/Math.PI)) + " 0 1 " + endNode.x + " " + endNode.y;
+					return startStr + arcStr;
+				})
+				.attr("stroke", "black")
+				.attr("fill", "none");
+			}
+			
+			//holds node data event handlers
+			function modifyNodes(nodesEnter){
+				nodesEnter.on("dblclick.modify", function (d,i,nodes){
+					d3.event.preventDefault();
+					d3.event.stopPropagation();
+					selectedData.node = d;
+					selectedData.property = "textdata";
+					$("#datadisplay").val(d.textdata);
+					d3.select("#datadisplay").on("change", function(){
+						if(selectedData.node){
+							selectedData.node[selectedData.property] = $("#datadisplay").val();
+							editNode(selectedData.node);
+						}
+						update();
+					});
+				})
+				.on("click.modify", function (d,i,nodes){
+					d3.event.preventDefault();
+					d3.event.stopPropagation();
+					selectedData.node = d;
+					selectedData.property = "info";
+					$("#datadisplay").val(d.info);
+					d3.select("#datadisplay").on("change", function(){
+						if(selectedData.node){
+							selectedData.node[selectedData.property] = $("#datadisplay").val();
+							editNode(selectedData.node);
+						}
+						update();
+					});
+				});
+			}
+			
+			function dragNodes(nodesEnter){
+				nodesEnter.on("mousedown.drag", function (d,i,nodes){
+					d3.event.preventDefault();
+					d3.event.stopPropagation();
+					if(d3.event.altKey){
+						drawingEdge = true;
+					}else{
+						draggingNode = true;
+					}
+					heldNode = d.id;
+				})
+				.on("mouseup.edge", function(d,i,nodes){
+					if(drawingEdge){
+						console.log("edge drawn");
+						d3.event.preventDefault();
+						d3.event.stopPropagation();
+						drawingEdge = false;
+						addEdge(heldNode, d.id);
+					}
+				});
+			}
+			
+			function update(){
+				//create edges
+				var edges = d3.select("#maingroup").selectAll(".edgeGraphic").data(relationarr);
+				var edgesEnter = edges.enter().append("g").attr("class", "edgeGraphic");
+				//create nodes
+				var nodes = d3.select("#maingroup").selectAll(".nodeGraphic").data(nodearr);
+				var nodesEnter = nodes.enter().append("g").attr("class","nodeGraphic");
+				
+				//draw edges
+				drawEdges(edgesEnter);
+				//draw nodes
+				drawNodes(nodesEnter);
+				
+				//add event handlers
+				modifyNodes(nodesEnter);
+				dragNodes(nodesEnter);
+				
+				nodes.exit().remove();
+				edges.exit().remove();
+				
+			}
+			var svg = d3.select("body")
+			.append("svg")
+			.attr("style", "background:#fff;margin:0;position:absolute;height:100%;width:70%")
+			//.attr("viewBox", "-500 -500 1000 1000")
+			.on("dblclick", function (d,i,nodes){
+				d3.event.preventDefault();
+				d3.event.stopPropagation();
+				let mousecoords = d3.mouse(document.getElementById("maingroup"));
+				addNode(mousecoords);
+			}).call(d3.zoom().on("zoom", function () {
+				svg.attr("transform", d3.event.transform);
+			})).on("dblclick.zoom", null)
+			.on("mouseup", function(d,i,nodes){
+				if(moved){
+					for(let iter = 0; iter < nodearr.length; iter++){
+						if(nodearr[iter].id == heldNode){
+							editNode(nodearr[iter]);
+						}
+					}
+				}
+				moved = false;
+				draggingNode = false;
+				drawingEdge = false;
+			})
+			.on("mousemove", function(d,i,nodes){
+				if(draggingNode){
+					let mousecoords = d3.mouse(document.getElementById("maingroup"));
+					for(let iter = 0; iter < nodearr.length; iter++){
+						if(nodearr[iter].id == heldNode){
+							nodearr[iter].x = mousecoords[0];
+							nodearr[iter].y = mousecoords[1];
+							moved = true;
+						}
+					}
+					update();
+				}
+			})
+			.append("g").attr("id", "maingroup");
+			update();
+		</script>
+	</body>
+</html>

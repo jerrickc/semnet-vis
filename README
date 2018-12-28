@@ -1,0 +1,79 @@
+TODO:
+    Load edgetypes from backend
+    Redesign frontend editor to include edge editing capabilities
+    Modify frontend JS models to allow edges to store edgetypes
+    Add API to set backend edgetypes
+    Connect frontend edgetypes to backend
+
+Controls:
+    
+    Viewing controls:
+        Pan:
+            drag on svg
+        Zoom:
+            scroll wheel
+    
+    Node controls:
+        Add nodes:
+            dblclick on svg
+        Edit title:
+            click on node, edit in textarea on the right, click back to svg when done
+        Edit data:
+            dblclick on node, edit in textarea on the right, click back to svg when done
+        Move nodes:
+            drag node
+    
+    Edge controls:
+        Add edge:
+            while holding Alt, click+drag from target to destination node
+        Edit edge:
+            TBD
+        
+API documentation:
+
+    index:
+        shows you an empty graph, adds new graph to database on load that will be used for any nodes/edges created
+
+    /<graph_id>:
+        loads graph with graphid in viewer
+
+    /getNodes:
+        return JSON for all nodes
+
+    /getEdges:
+        return JSON for all edges
+
+    /getGraph:
+        return JSON for all edgetypes, edges, and nodes wrapped into a single object
+
+    /pickGraph/<graph_id>:
+        return JSON for <graph_id>'s edgetypes, edges, and nodes wrapped into a single object
+
+    /addNode/<graph_id>: 
+        Generates a new node in the DB, attached to the graph <graph_id>, returning the ID of the newly generated object to the caller
+        Takes as input a JSON object that looks like this:
+        {
+            info: <title of the node, i.e. what's displayed on the viewer overview>,
+            textdata: <node's internal dblclick data>,
+            x: <x coordinates from SVG>,
+            y: <y coordinates from SVG>
+        }
+
+    /editNode:
+        Edit an existing node with the JSON object input as follows:
+        {
+            id: <id of the existing node in the DB>,
+            info: <title of the node, i.e. what's displayed on the viewer overview>,
+            textdata: <node's internal dblclick data>,
+            x: <x coordinates from SVG>,
+            y: <y coordinates from SVG>
+        }
+        
+
+    /addEdge/<graph_id>:
+        Generates a new edge in the DB, attached to the graph <graph_id>, returning the ID of the newly generated object to the caller
+        Takes as input a JSON object that looks like this:
+            {
+                node1: <node1's DB id>,
+                node2: <node2's DB id>
+            }
